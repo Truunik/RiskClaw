@@ -2,14 +2,21 @@ import type { Hex } from "./types/risk.ts";
 import { Observer, type RawPoolSnapshot } from "./observer.ts";
 import { Analyst } from "./analyst.ts";
 import { Guardian } from "./guardian.ts";
-import { InMemoryZeroGMemory } from "./memory/zeroGMemory.ts";
+import { InMemoryZeroGMemory, ZeroGStorageMemory, type ZeroGMemory } from "./memory/zeroGMemory.ts";
 import { HeuristicZeroGCompute } from "./compute/zeroGCompute.ts";
 
 /// End-to-end pipeline runner — Observer → Analyst → Guardian → (executor tx).
 /// The executor tx is logged here, not sent; src/executor.ts (next iteration)
 /// will sign and submit to RiskPolicyRegistry on 0G testnet.
 async function main() {
-  const memory = new InMemoryZeroGMemory();
+  const memory: ZeroGMemory = process.env.OG_STORAGE_INDEXER_URL
+    ? new ZeroGStorageMemory(
+        process.env.OG_STORAGE_INDEXER_URL,
+        process.env.OG_RPC_URL!,
+        process.env.DEPLOYER_PRIVATE_KEY!,
+      )
+    : new InMemoryZeroGMemory();
+  console.log("[memory]    backend:", memory.constructor.name);
   const compute = new HeuristicZeroGCompute({
     providerAddress: (process.env.OG_COMPUTE_PROVIDER_ADDRESS ?? "0xCAFE000000000000000000000000000000000000") as Hex,
     model: process.env.OG_COMPUTE_MODEL ?? "qwen-2.5-7b-instruct",
