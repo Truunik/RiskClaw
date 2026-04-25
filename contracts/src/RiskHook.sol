@@ -24,6 +24,7 @@ contract RiskHook is BaseHook {
 
     error PoolBlocked(bytes32 poolId, uint16 riskScore);
     error PolicyStale(bytes32 poolId);
+    error SwapTooLarge(bytes32 poolId, uint256 amount, uint128 cap);
 
     constructor(IPoolManager _manager, IRiskPolicyRegistry _registry) BaseHook(_manager) {
         registry = _registry;
@@ -48,7 +49,7 @@ contract RiskHook is BaseHook {
         });
     }
 
-    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         internal
         override
         returns (bytes4, BeforeSwapDelta, uint24)
@@ -58,6 +59,14 @@ contract RiskHook is BaseHook {
 
         if (registry.isStale(poolId)) revert PolicyStale(poolId);
         if (policy.riskScoreBps >= BLOCK_THRESHOLD) revert PoolBlocked(poolId, policy.riskScoreBps);
+
+        if (policy.maxAbsAmountSpecified != 0) {
+            int256 amt = params.amountSpecified;
+            uint256 absAmount = amt < 0 ? uint256(-amt) : uint256(amt);
+            if (absAmount > policy.maxAbsAmountSpecified) {
+                revert SwapTooLarge(poolId, absAmount, policy.maxAbsAmountSpecified);
+            }
+        }
 
         // OVERRIDE_FEE_FLAG tells PoolManager to use this fee for the current swap only;
         // the pool itself must be initialized with DYNAMIC_FEE_FLAG for overrides to apply.

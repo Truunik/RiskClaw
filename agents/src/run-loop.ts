@@ -18,7 +18,7 @@ async function main() {
 
   const observer = new Observer(memory);
   const analyst = new Analyst(compute, memory);
-  const guardian = new Guardian(memory);
+  const guardian = new Guardian(memory, compute);
 
   const poolId = "0x1111111111111111111111111111111111111111111111111111111111111111" as Hex;
 
@@ -30,25 +30,28 @@ async function main() {
     priceImpactBps: 620,
   };
 
-  const { metrics, root } = await observer.observe(poolId, scenario);
-  console.log("[Observer]  metrics root", root);
+  const { metrics, root: metricsRoot } = await observer.observe(poolId, scenario);
+  console.log("[Observer]  metrics root", metricsRoot);
 
   const { verified, explanationRoot } = await analyst.analyze(metrics);
   console.log("[Analyst]   memo root   ", explanationRoot);
   console.log("[Analyst]   risk score  ", verified.memo.riskScoreBps);
   console.log("[Analyst]   reasoning   ", verified.memo.reasoning);
 
-  const update = await guardian.decide(poolId, verified, explanationRoot);
+  const update = await guardian.decide(poolId, verified, explanationRoot, metricsRoot);
   if (!update) {
     console.log("[Guardian]  REJECTED — guardrails tripped");
     return;
   }
   console.log("[Guardian]  policy update");
-  console.log("            score   ", update.riskScoreBps);
-  console.log("            fee     ", update.dynamicFee);
-  console.log("            maxSwap ", update.maxSwapBps);
-  console.log("            proof.explanationRoot ", update.proof.explanationRoot);
-  console.log("            proof.computeProofRoot", update.proof.computeProofRoot);
+  console.log("            score                  ", update.riskScoreBps);
+  console.log("            fee                    ", update.dynamicFee);
+  console.log("            maxAbsAmountSpecified  ", update.maxAbsAmountSpecified.toString());
+  console.log("            proof.explanationRoot  ", update.proof.explanationRoot);
+  console.log("            proof.computeProofRoot ", update.proof.computeProofRoot);
+  console.log("            proof.metricsRoot      ", update.proof.metricsRoot);
+  console.log("            proof.promptHash       ", update.proof.promptHash);
+  console.log("            proof.modelHash        ", update.proof.modelHash);
   console.log("[Executor]  TODO: send updatePolicy(...) to RiskPolicyRegistry on 0G");
 }
 
