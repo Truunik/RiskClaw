@@ -1,13 +1,14 @@
-import type { Hex } from "./types/risk.ts";
+import type { Address, Hex } from "viem";
 import { Observer, type RawPoolSnapshot } from "./observer.ts";
 import { Analyst } from "./analyst.ts";
 import { Guardian } from "./guardian.ts";
+import { Executor } from "./executor.ts";
 import { InMemoryZeroGMemory, ZeroGStorageMemory, type ZeroGMemory } from "./memory/zeroGMemory.ts";
 import { HeuristicZeroGCompute } from "./compute/zeroGCompute.ts";
 
-/// End-to-end pipeline runner — Observer → Analyst → Guardian → (executor tx).
-/// The executor tx is logged here, not sent; src/executor.ts (next iteration)
-/// will sign and submit to RiskPolicyRegistry on 0G testnet.
+/// End-to-end pipeline: Observer → Analyst → Guardian → Executor.
+/// Backends are picked from env so the same loop runs locally (in-memory +
+/// heuristic) or against real 0G testnet (Storage + Compute + onchain registry).
 async function main() {
   const memory: ZeroGMemory = process.env.OG_STORAGE_INDEXER_URL
     ? new ZeroGStorageMemory(
@@ -17,17 +18,31 @@ async function main() {
       )
     : new InMemoryZeroGMemory();
   console.log("[memory]    backend:", memory.constructor.name);
+
   const compute = new HeuristicZeroGCompute({
-    providerAddress: (process.env.OG_COMPUTE_PROVIDER_ADDRESS ?? "0xCAFE000000000000000000000000000000000000") as Hex,
+    providerAddress: (process.env.OG_COMPUTE_PROVIDER_ADDRESS ??
+      "0xCAFE000000000000000000000000000000000000") as Hex,
     model: process.env.OG_COMPUTE_MODEL ?? "qwen-2.5-7b-instruct",
     verify: process.env.OG_COMPUTE_VERIFY !== "false",
   });
+  console.log("[compute]   backend:", compute.constructor.name, "model:", process.env.OG_COMPUTE_MODEL);
 
   const observer = new Observer(memory);
   const analyst = new Analyst(compute, memory);
   const guardian = new Guardian(memory, compute);
 
-  const poolId = "0x1111111111111111111111111111111111111111111111111111111111111111" as Hex;
+  const executor = process.env.RISK_POLICY_REGISTRY
+    ? new Executor({
+        rpcUrl: process.env.OG_RPC_URL!,
+        registry: process.env.RISK_POLICY_REGISTRY as Address,
+        privateKey: process.env.DEPLOYER_PRIVATE_KEY! as Hex,
+        explorerUrl: process.env.OG_EXPLORER_URL,
+      })
+    : null;
+  console.log("[executor]  backend:", executor ? "onchain" : "dry-run");
+
+  const poolId = (process.env.POOL_ID ??
+    "0x1111111111111111111111111111111111111111111111111111111111111111") as Hex;
 
   const scenario: RawPoolSnapshot = {
     tvl: 5_000_000n * 10n ** 18n,
@@ -57,9 +72,17 @@ async function main() {
   console.log("            proof.explanationRoot  ", update.proof.explanationRoot);
   console.log("            proof.computeProofRoot ", update.proof.computeProofRoot);
   console.log("            proof.metricsRoot      ", update.proof.metricsRoot);
-  console.log("            proof.promptHash       ", update.proof.promptHash);
-  console.log("            proof.modelHash        ", update.proof.modelHash);
-  console.log("[Executor]  TODO: send updatePolicy(...) to RiskPolicyRegistry on 0G");
+
+  if (!executor) {
+    console.log("[Executor]  dry-run — set RISK_POLICY_REGISTRY in env to broadcast");
+    return;
+  }
+
+  const t = Date.now();
+  const result = await executor.submit(update);
+  console.log(`[Executor]  tx       ${result.txHash}`);
+  if (result.explorerUrl) console.log(`[Executor]  explorer ${result.explorerUrl}`);
+  console.log(`[Executor]  confirmed in ${Date.now() - t}ms`);
 }
 
 main().catch((err) => {
