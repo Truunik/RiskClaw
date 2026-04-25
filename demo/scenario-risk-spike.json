@@ -1,0 +1,18 @@
+{
+  "name": "risk-spike",
+  "description": "Mid-cap token pool drains 74% TVL in 24h, then takes a single 18%-of-active-liquidity swap with 6.2% price impact",
+  "poolId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+  "snapshot": {
+    "tvl": "5000000000000000000000000",
+    "tvlDelta24hBps": 7400,
+    "isDrain": true,
+    "lastSwapAmountBps": 1800,
+    "priceImpactBps": 620
+  },
+  "expected": {
+    "riskScoreBps": 8000,
+    "recommendedFee": 30000,
+    "recommendedMaxSwapBps": 200,
+    "policy": "PENALTY_FEE"
+  }
+}

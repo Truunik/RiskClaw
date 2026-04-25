@@ -1,0 +1,22 @@
+# Foundry
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+contracts/.gas-snapshot
+
+# Node / bun
+agents/node_modules/
+agents/dist/
+agents/bun.lockb
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
