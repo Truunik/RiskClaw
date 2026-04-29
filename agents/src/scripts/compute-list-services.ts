@@ -19,7 +19,7 @@ async function main() {
     console.log("");
   }
 
-  const target = process.env.OG_COMPUTE_MODEL ?? "qwen-2.5-7b-instruct";
+  const target = process.env.OG_COMPUTE_MODEL ?? "qwen/qwen-2.5-7b-instruct";
   const match = services.find((s) => s.model === target && s.teeSignerAcknowledged);
   if (match) {
     console.log(`✓ matched ${target}: provider=${match.provider} verifiability=${match.verifiability}`);

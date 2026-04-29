@@ -28,7 +28,7 @@ async function main() {
   const computeBaseConfig = {
     providerAddress: (process.env.OG_COMPUTE_PROVIDER_ADDRESS ??
       "0xCAFE000000000000000000000000000000000000") as Hex,
-    model: process.env.OG_COMPUTE_MODEL ?? "qwen-2.5-7b-instruct",
+    model: process.env.OG_COMPUTE_MODEL ?? "qwen/qwen-2.5-7b-instruct",
     verify: process.env.OG_COMPUTE_VERIFY !== "false",
   };
   const useRealCompute =
