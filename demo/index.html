@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>RiskClaw — how the audit chain works</title>
+<style>
+  :root {
+    --bg: #0a0d12;
+    --panel: #11161d;
+    --panel2: #161c25;
+    --line: #1f2733;
+    --ink: #d8e1ec;
+    --dim: #7d8a9c;
+    --accent: #7ad7ff;
+    --warn: #ffb454;
+    --ok: #4ade80;
+    --bad: #f87171;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 13.5px/1.5 var(--mono);
+  }
+  a { color: var(--accent); text-decoration: none; word-break: break-all; }
+  a:hover { text-decoration: underline; }
+  code { color: #cdeeff; }
+
+  header {
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .5px; }
+  header .sub { color: var(--dim); font-size: 12.5px; }
+  header .right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  header .pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    border: 1px solid var(--line);
+    color: var(--dim);
+  }
+  header .pill.ok { color: var(--ok); border-color: #1f4533; }
+  header .pill.warn { color: var(--warn); border-color: #5a4322; }
+
+  main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 14px;
+    padding: 14px;
+    min-height: calc(100vh - 64px);
+  }
+  @media (max-width: 980px) {
+    main { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .card h2 {
+    margin: 0;
+    padding: 10px 14px;
+    font-size: 12px;
+    letter-spacing: 1.5px;
+    color: var(--dim);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--line);
+  }
+  .card .body { padding: 14px; }
+
+  /* SVG knowledge graph */
+  .graph-wrap { padding: 0; }
+  svg.graph { width: 100%; height: auto; display: block; }
+  .node rect {
+    fill: var(--panel2);
+    stroke: var(--line);
+    stroke-width: 1.5;
+    rx: 8; ry: 8;
+    transition: stroke .18s, filter .18s;
+    cursor: pointer;
+  }
+  .node:hover rect, .node.selected rect {
+    stroke: var(--accent);
+    filter: drop-shadow(0 0 8px rgba(122, 215, 255, .35));
+  }
+  .node text { fill: var(--ink); font-family: var(--mono); pointer-events: none; }
+  .node text.t { font-size: 11px; fill: var(--dim); letter-spacing: 1px; text-transform: uppercase; }
+  .node text.l { font-size: 13.5px; }
+  .node text.s { font-size: 11px; fill: var(--dim); }
+  .node.agent rect { stroke: #2a4d63; }
+  .node.zerog rect { stroke: #1f4533; }
+  .node.chain rect { stroke: #5a4322; }
+  .node.user rect  { stroke: #5a2828; }
+
+  .edge {
+    fill: none;
+    stroke: var(--line);
+    stroke-width: 1.5;
+  }
+  .edge.flow { stroke: #2c4658; }
+  .edge.write { stroke: #2c4658; }
+  .edge.read { stroke: #2c4658; stroke-dasharray: 4 4; }
+  .edge-label {
+    font-size: 10.5px;
+    fill: var(--dim);
+    font-family: var(--mono);
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 14px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--line);
+    font-size: 11.5px;
+    color: var(--dim);
+    flex-wrap: wrap;
+  }
+  .legend .swatch {
+    display: inline-block;
+    width: 10px; height: 10px;
+    margin-right: 6px;
+    vertical-align: -1px;
+    border-radius: 2px;
+    border: 1px solid var(--line);
+  }
+  .legend .swatch.agent { border-color: #2a4d63; }
+  .legend .swatch.zerog { border-color: #1f4533; }
+  .legend .swatch.chain { border-color: #5a4322; }
+  .legend .swatch.user  { border-color: #5a2828; }
+
+  /* Detail panel */
+  .detail h3 { margin: 0 0 4px; font-size: 14px; color: var(--ink); }
+  .detail .kicker {
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .detail p { margin: 0 0 10px; color: var(--dim); }
+  .detail p strong { color: var(--ink); font-weight: 600; }
+  .detail .kv {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 6px 12px;
+    font-size: 12.5px;
+    margin: 10px 0;
+  }
+  .detail .kv .k { color: var(--dim); }
+  .detail .kv .v { color: var(--ink); word-break: break-all; }
+  .detail .links {
+    display: flex; flex-wrap: wrap; gap: 6px;
+    margin-top: 14px;
+  }
+  .detail .links a {
+    border: 1px solid var(--line);
+    background: var(--panel2);
+    padding: 5px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+  }
+  .detail h4 {
+    margin: 14px 0 6px;
+    font-size: 11px;
+    color: var(--dim);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  /* Run log */
+  .run h2 { color: var(--dim); }
+  pre.run-log {
+    margin: 0;
+    padding: 14px;
+    background: #06090d;
+    color: #b9c6d6;
+    overflow: auto;
+    font-size: 12.5px;
+    white-space: pre;
+    border-top: 1px solid var(--line);
+    line-height: 1.5;
+  }
+  pre.run-log .a { color: var(--accent); }
+  pre.run-log .ok { color: var(--ok); }
+  pre.run-log .warn { color: var(--warn); }
+  pre.run-log .dim { color: var(--dim); }
+
+  footer {
+    color: var(--dim);
+    padding: 14px 24px 24px;
+    font-size: 11.5px;
+    border-top: 1px solid var(--line);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>RiskClaw <span class="sub">— audit chain explorer</span></h1>
+  <div class="right">
+    <span class="pill ok">live on 0G Galileo · chain 16602</span>
+    <span class="pill">click any node</span>
+    <a class="pill" href="https://github.com/Truunik/RiskClaw" target="_blank" rel="noopener">github →</a>
+  </div>
+</header>
+
+<main>
+  <section class="col">
+    <div class="card graph-wrap">
+      <h2>Knowledge graph</h2>
+      <svg class="graph" viewBox="0 0 920 720" preserveAspectRatio="xMidYMid meet" aria-label="RiskClaw architecture">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="#2c4658" />
+          </marker>
+        </defs>
+
+        <!-- ============ EDGES (drawn first so they sit beneath nodes) ============ -->
+
+        <!-- Pool -> Observer (snapshot) -->
+        <path class="edge flow" d="M380 80 C 280 80, 200 100, 180 160" marker-end="url(#arrow)" />
+        <text class="edge-label" x="225" y="115">snapshot</text>
+
+        <!-- Observer -> 0G Storage (metrics root) -->
+        <path class="edge write" d="M260 195 C 380 195, 520 195, 640 195" marker-end="url(#arrow)" />
+        <text class="edge-label" x="380" y="187">metrics root</text>
+
+        <!-- Observer -> Analyst -->
+        <path class="edge flow" d="M180 230 L 180 290" marker-end="url(#arrow)" />
+        <text class="edge-label" x="190" y="263">metrics</text>
+
+        <!-- Analyst -> 0G Compute (prompt) -->
+        <path class="edge flow" d="M260 320 L 640 320" marker-end="url(#arrow)" />
+        <text class="edge-label" x="380" y="312">prompt + signed billing headers</text>
+
+        <!-- 0G Compute -> Analyst (verified memo) -->
+        <path class="edge flow" d="M640 360 L 260 360" marker-end="url(#arrow)" />
+        <text class="edge-label" x="350" y="375">JSON memo · TEE-attested</text>
+
+        <!-- Analyst -> 0G Storage (memo root) -->
+        <path class="edge write" d="M260 320 C 480 280, 600 250, 720 230" marker-end="url(#arrow)" />
+        <text class="edge-label" x="500" y="270">explanationRoot</text>
+
+        <!-- Analyst -> Guardian -->
+        <path class="edge flow" d="M180 360 L 180 420" marker-end="url(#arrow)" />
+        <text class="edge-label" x="190" y="393">verifiedMemo</text>
+
+        <!-- Guardian -> 0G Storage (proof artifact) -->
+        <path class="edge write" d="M260 450 C 460 450, 600 360, 720 230" marker-end="url(#arrow)" />
+        <text class="edge-label" x="490" y="430">computeProofRoot</text>
+
+        <!-- Guardian -> Registry (updatePolicy) -->
+        <path class="edge flow" d="M180 490 L 180 560" marker-end="url(#arrow)" />
+        <text class="edge-label" x="190" y="528">updatePolicy(...)</text>
+
+        <!-- RiskHook -> Registry (reads) -->
+        <path class="edge read" d="M620 590 L 270 590" marker-end="url(#arrow)" />
+        <text class="edge-label" x="380" y="582">reads policy + isStale</text>
+
+        <!-- Swapper -> Pool (swap) -->
+        <path class="edge flow" d="M740 660 C 600 660, 480 200, 480 105" marker-end="url(#arrow)" />
+        <text class="edge-label" x="630" y="370">swap(...)</text>
+
+        <!-- Pool <-> RiskHook (PoolManager calls beforeSwap) -->
+        <path class="edge flow" d="M540 105 C 660 105, 720 460, 720 560" marker-end="url(#arrow)" />
+        <text class="edge-label" x="690" y="320">beforeSwap / beforeAddLiquidity</text>
+
+        <!-- ============ NODES ============ -->
+
+        <!-- Pool -->
+        <g class="node chain" data-id="pool" tabindex="0">
+          <rect x="380" y="40" width="160" height="60" />
+          <text class="t" x="395" y="58">v4 pool · 0G testnet</text>
+          <text class="l" x="395" y="80">Pool + PoolManager</text>
+          <text class="s" x="395" y="93">DYNAMIC_FEE_FLAG</text>
+        </g>
+
+        <!-- Observer -->
+        <g class="node agent" data-id="observer" tabindex="0">
+          <rect x="100" y="160" width="160" height="68" />
+          <text class="t" x="115" y="178">agent · TypeScript</text>
+          <text class="l" x="115" y="200">Observer</text>
+          <text class="s" x="115" y="216">snapshot → metrics</text>
+        </g>
+
+        <!-- Analyst -->
+        <g class="node agent" data-id="analyst" tabindex="0">
+          <rect x="100" y="290" width="160" height="68" />
+          <text class="t" x="115" y="308">agent · TypeScript</text>
+          <text class="l" x="115" y="330">Analyst</text>
+          <text class="s" x="115" y="346">memo via 0G Compute</text>
+        </g>
+
+        <!-- Guardian -->
+        <g class="node agent" data-id="guardian" tabindex="0">
+          <rect x="100" y="420" width="160" height="68" />
+          <text class="t" x="115" y="438">agent · TypeScript</text>
+          <text class="l" x="115" y="460">Guardian</text>
+          <text class="s" x="115" y="476">guardrails + signs tx</text>
+        </g>
+
+        <!-- 0G Storage -->
+        <g class="node zerog" data-id="storage" tabindex="0">
+          <rect x="640" y="160" width="180" height="78" />
+          <text class="t" x="655" y="178">0G Storage</text>
+          <text class="l" x="655" y="200">Storage indexer</text>
+          <text class="s" x="655" y="216">KV · log · memo upload</text>
+          <text class="s" x="655" y="230">content-addressed roots</text>
+        </g>
+
+        <!-- 0G Compute -->
+        <g class="node zerog" data-id="compute" tabindex="0">
+          <rect x="640" y="290" width="180" height="78" />
+          <text class="t" x="655" y="308">0G Compute · TEE</text>
+          <text class="l" x="655" y="330">Inference broker</text>
+          <text class="s" x="655" y="346">qwen/qwen-2.5-7b-instruct</text>
+          <text class="s" x="655" y="360">processResponse() = true</text>
+        </g>
+
+        <!-- Registry -->
+        <g class="node chain" data-id="registry" tabindex="0">
+          <rect x="100" y="560" width="170" height="68" />
+          <text class="t" x="115" y="578">onchain · 0G chain</text>
+          <text class="l" x="115" y="600">RiskPolicyRegistry</text>
+          <text class="s" x="115" y="616">PoolRiskPolicy + PolicyProof</text>
+        </g>
+
+        <!-- RiskHook -->
+        <g class="node chain" data-id="hook" tabindex="0">
+          <rect x="620" y="560" width="180" height="68" />
+          <text class="t" x="635" y="578">onchain · v4 hook</text>
+          <text class="l" x="635" y="600">RiskHook</text>
+          <text class="s" x="635" y="616">flag bits 0x880 (CREATE2)</text>
+        </g>
+
+        <!-- Swapper -->
+        <g class="node user" data-id="swapper" tabindex="0">
+          <rect x="640" y="660" width="180" height="48" />
+          <text class="t" x="655" y="678">any user</text>
+          <text class="l" x="655" y="697">Swapper</text>
+        </g>
+      </svg>
+      <div class="legend">
+        <span><i class="swatch agent"></i>agent (TypeScript, off-chain)</span>
+        <span><i class="swatch zerog"></i>0G service</span>
+        <span><i class="swatch chain"></i>onchain contract</span>
+        <span><i class="swatch user"></i>external actor</span>
+      </div>
+    </div>
+
+    <div class="card run">
+      <h2>Live run on 0G testnet (last verified 2026-04-29)</h2>
+      <pre class="run-log" id="run-log">
+<span class="dim">[memory]</span>    backend: ZeroGStorageMemory
+<span class="dim">[compute]</span>   backend: <span class="a">RealZeroGCompute</span> model: qwen/qwen-2.5-7b-instruct
+<span class="dim">[executor]</span>  backend: onchain
+<span class="dim">[Observer]</span>  metrics root <span class="a">0x08c73a14…85669056</span>
+<span class="dim">[Analyst]</span>   memo root    <span class="a">0xa4ec75b2…0707666a</span>
+<span class="dim">[Analyst]</span>   risk score   <span class="warn">6200</span>
+<span class="dim">[Analyst]</span>   reasoning    [ "High TVL drain", "Significant lastSwapAmount", "Moderate price impact" ]
+<span class="dim">[Analyst]</span>   provider     0xa48f01287233509FD694a22Bf840225062E67836
+<span class="dim">[Analyst]</span>   responseId   e7dc27f2-23ce-4771-9613-f8e5e39c1757
+<span class="dim">[Analyst]</span>   TEE verified <span class="ok">true</span>
+<span class="dim">[Guardian]</span>  policy update
+            score                   <span class="warn">6200</span>
+            fee                     100000  (10%)
+            maxAbsAmountSpecified   50000000000000000000
+            proof.explanationRoot   <span class="a">0xa4ec75b2…0707666a</span>
+            proof.computeProofRoot  <span class="a">0x5ebd1df5…e9fae3e1</span>
+            proof.metricsRoot       <span class="a">0x08c73a14…85669056</span>
+<span class="dim">[Executor]</span>  tx       <span class="a">0x509444b8…087ee065d</span>
+<span class="dim">[Executor]</span>  confirmed in 10524ms
+<span class="dim">[Ledger]</span>    total 3.500000 0G  available 0.500000 0G
+
+<span class="dim">--- demo:swap, same pool, same policy ---</span>
+swapping    0.1000 token0 → token1 (exact-in, zeroForOne)
+swap tx     <span class="a">0x1b94d6c9…25ebbc8</span>
+confirmed   in 8082ms (block 30560097)
+post bal0   999002.2794  (Δ -0.1000)
+post bal1   999002.6594  (Δ +0.0899)
+effective   <span class="ok">~10.02%</span>  (matches the AI-set policy fee + tail of price impact)
+</pre>
+    </div>
+  </section>
+
+  <aside class="card detail">
+    <div class="body" id="detail">
+      <div class="kicker">getting started</div>
+      <h3>Click any node in the graph</h3>
+      <p>RiskClaw decides — in real time and verifiably — how a Uniswap v4-style pool should behave under risk: <strong>ALLOW</strong>, <strong>PENALTY_FEE</strong>, or <strong>BLOCK</strong>.</p>
+      <p>An off-chain agent swarm reasons. A TEE attests. The hook enforces. Nothing the AI says reaches the swap path until it survives deterministic guardrails and is committed onchain alongside fetchable proof roots.</p>
+      <h4>The shape of the proof</h4>
+      <p><code>explanationRoot</code> + <code>computeProofRoot</code> + <code>metricsRoot</code> + <code>promptHash</code> + <code>modelHash</code> + <code>provider</code> + <code>responseIdHash</code> + <code>verifiedAt</code> — all stored in the registry's <code>PolicyProof</code> struct.</p>
+      <p>Click <strong>0G Compute</strong> to see the TEE-verified inference call. Click <strong>RiskHook</strong> to see how the policy lands at swap time.</p>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  Throwaway testnet wallet · all addresses below are on 0G Galileo (chain 16602) ·
+  source: <a href="https://github.com/Truunik/RiskClaw" target="_blank" rel="noopener">github.com/Truunik/RiskClaw</a>
+</footer>
+
+<script>
+  const EXPLORER = "https://chainscan-galileo.0g.ai";
+  const POOL_MANAGER = "0x8CE288F20FcC3bA20FF00b1efD969f006953F4Fa";
+  const REGISTRY = "0x804b7Df3814c6ba5A47E93043EA8da66a21B9351";
+  const HOOK = "0x24f58d75c64745a6a03e38f0cd38d133cf030880";
+  const TOKEN0 = "0x369a561ad56cdde064c8c4bef9ca801665fa7d87";
+  const TOKEN1 = "0x6871fc9855733e7fd7cb22b599916e403d7851de";
+  const SWAP_ROUTER = "0xD20e38229009d25B93AE99aa41Ed8903b8cE2Ea3";
+  const POOL_ID = "0x2672da44c80cbce0ebb5dd7f718415a1bb4e70c26b14fddceeadb1e2a7c511f6";
+  const COMPUTE_PROVIDER = "0xa48f01287233509FD694a22Bf840225062E67836";
+  const UPDATE_POLICY_TX = "0x509444b8900b30801ec3faa1b836c4569a3c1feda6cf73aacb3e05d087ee065d";
+  const SWAP_TX = "0x1b94d6c989f1b03aa9701d9b6afbf4ce42c7666785ad01b5efcaf1eac25ebbc8";
+  const EXPLANATION_ROOT = "0xa4ec75b2c6aac30ebff364179eac89fc2b927057b4e04963246212410707666a";
+  const COMPUTE_PROOF_ROOT = "0x5ebd1df569e4e7a6abe7409866ff34b72de8a848d1cb94e9fba525e4e9fae3e1";
+  const METRICS_ROOT = "0x08c73a143b6771327e43cb284bea4f4983dd9bbdb573712e5d9ce8723a4f5452";
+
+  const NODES = {
+    pool: {
+      kicker: "onchain · 0G testnet",
+      title: "v4 Pool + PoolManager",
+      body: `<p>The demo pool is a <strong>v4-compatible</strong> Uniswap pool deployed on 0G Galileo testnet. It was initialized with <code>LPFeeLibrary.DYNAMIC_FEE_FLAG</code> so the hook's per-swap fee override actually applies.</p>
+        <p>Token0 and Token1 are vanilla TestERC20s; liquidity was added via PoolModifyLiquidityTest with <code>L = 1e21</code> over a wide tick range.</p>`,
+      kv: [
+        ["PoolManager", short(POOL_MANAGER)],
+        ["poolId", short(POOL_ID)],
+        ["TOKEN0", short(TOKEN0)],
+        ["TOKEN1", short(TOKEN1)],
+        ["fee", "DYNAMIC_FEE_FLAG (0x800000)"],
+        ["tickSpacing", "60"],
+      ],
+      links: [
+        ["PoolManager on chainscan", `${EXPLORER}/address/${POOL_MANAGER}`],
+      ],
+    },
+
+    observer: {
+      kicker: "agent · TypeScript",
+      title: "Observer",
+      body: `<p>Owns <strong>facts</strong>. Reads a pool snapshot (TVL, 24h delta, last swap as bps of liquidity, price impact bps), packs it into deterministic metrics, and writes them to 0G Storage as both a KV value and an append-only log entry.</p>
+        <p>Returns the resulting <code>metricsRoot</code> — the first hash in the proof chain.</p>`,
+      kv: [
+        ["file", "agents/src/observer.ts"],
+        ["writes to", "0G Storage KV + log"],
+        ["produces", "metricsRoot"],
+      ],
+      links: [
+        ["agents/src/observer.ts →", "https://github.com/Truunik/RiskClaw/blob/main/agents/src/observer.ts"],
+      ],
+    },
+
+    analyst: {
+      kicker: "agent · TypeScript",
+      title: "Analyst",
+      body: `<p>Owns <strong>interpretation</strong>. Sends the metrics to 0G Compute via <code>@0glabs/0g-serving-broker</code>, gets a structured JSON memo from the TEE-backed model, verifies the response signature with <code>processResponse()</code>, and uploads the memo to 0G Storage.</p>
+        <p>The signed billing headers commit to the exact prompt, and the prompt's keccak hash is later committed onchain as <code>promptHash</code> — making the prompt revision part of the audit chain.</p>`,
+      kv: [
+        ["file", "agents/src/analyst.ts"],
+        ["compute backend", "RealZeroGCompute"],
+        ["produces", "explanationRoot · TEE-verified"],
+      ],
+      links: [
+        ["agents/src/compute/zeroGCompute.ts →", "https://github.com/Truunik/RiskClaw/blob/main/agents/src/compute/zeroGCompute.ts"],
+      ],
+    },
+
+    guardian: {
+      kicker: "agent · TypeScript",
+      title: "Guardian",
+      body: `<p>Owns <strong>permissioned action</strong>. Validates the verified memo against deterministic guardrails (max fee, max score, max single-update jump), persists the decision log + proof artifact to 0G Storage, and submits a signed <code>updatePolicy</code> transaction to the registry on 0G chain.</p>
+        <p>The proof artifact bundle (provider, model, responseId, promptHash, modelHash, metricsRoot, rawResponseHash, teeSignature, verificationResult, verifiedAt) is uploaded to 0G Storage and its root becomes <code>computeProofRoot</code> onchain.</p>`,
+      kv: [
+        ["file", "agents/src/guardian.ts"],
+        ["maxFee", "100,000 pips (10%)"],
+        ["maxScore", "10,000"],
+        ["maxFeeJump", "50,000 pips"],
+        ["maxScoreJump", "4,000"],
+      ],
+      links: [
+        ["last updatePolicy tx", `${EXPLORER}/tx/${UPDATE_POLICY_TX}`],
+      ],
+    },
+
+    storage: {
+      kicker: "0G service · content-addressed",
+      title: "0G Storage",
+      body: `<p>Persistent storage for the agent swarm. Every upload returns a content-addressed root that downstream consumers fetch back via the indexer.</p>
+        <p>Three roots from each agent loop end up onchain inside <code>PolicyProof</code>: <code>metricsRoot</code> (Observer's snapshot), <code>explanationRoot</code> (Analyst's memo), <code>computeProofRoot</code> (Guardian's TEE attestation bundle). A judge can paste any root into <code>bun run demo:explain &lt;root&gt;</code> to fetch and pretty-print the original bytes.</p>`,
+      kv: [
+        ["adapter", "ZeroGStorageMemory"],
+        ["sdk", "@0gfoundation/0g-ts-sdk"],
+        ["explanationRoot", short(EXPLANATION_ROOT)],
+        ["computeProofRoot", short(COMPUTE_PROOF_ROOT)],
+        ["metricsRoot", short(METRICS_ROOT)],
+      ],
+      links: [
+        ["agents/src/memory/zeroGMemory.ts →", "https://github.com/Truunik/RiskClaw/blob/main/agents/src/memory/zeroGMemory.ts"],
+      ],
+    },
+
+    compute: {
+      kicker: "0G service · TEE-verifiable",
+      title: "0G Compute (TEE)",
+      body: `<p>The brain. RiskClaw's Analyst calls a TEE-acknowledged provider serving <code>qwen/qwen-2.5-7b-instruct</code> via the 0G serving broker. Billing headers are signed against the user content; the response carries a <code>ZG-Res-Key</code> id; <code>processResponse()</code> verifies the response was actually produced inside the provider's attested TEE.</p>
+        <p>The verification result, the response id, the provider address, and hashes of the prompt and model name all end up onchain — so anyone can audit which provider justified a given policy change and re-fetch the response.</p>`,
+      kv: [
+        ["sdk", "@0glabs/0g-serving-broker"],
+        ["provider", short(COMPUTE_PROVIDER)],
+        ["model", "qwen/qwen-2.5-7b-instruct"],
+        ["responseId (last)", "e7dc27f2-23ce-4771-9613-f8e5e39c1757"],
+        ["TEE verified", "true"],
+        ["ledger", "3.5 0G total · 0.5 available"],
+      ],
+      links: [
+        ["provider on chainscan", `${EXPLORER}/address/${COMPUTE_PROVIDER}`],
+      ],
+    },
+
+    registry: {
+      kicker: "onchain · 0G chain",
+      title: "RiskPolicyRegistry",
+      body: `<p>The single source of truth for pool policy. Stores a <code>PoolRiskPolicy</code> per pool with risk score, dynamic fee, max swap cap, lastUpdated, updater, and an embedded <code>PolicyProof</code>.</p>
+        <p>Hard-coded constants: <code>MAX_FEE = 100,000</code> pips (10%), <code>MAX_SCORE = 10,000</code>, <code>STALE_AFTER = 1 hour</code>, <code>PROOF_FRESHNESS = 15 minutes</code>. Proof validation rejects any field that's zero, in the future, or older than 15 minutes — even an "approved" agent can't post a stale or malformed proof.</p>`,
+      kv: [
+        ["address", short(REGISTRY)],
+        ["MAX_FEE", "100,000 pips (10%)"],
+        ["STALE_AFTER", "1 hour"],
+        ["PROOF_FRESHNESS", "15 minutes"],
+        ["tests passing", "17/17"],
+      ],
+      links: [
+        ["registry on chainscan", `${EXPLORER}/address/${REGISTRY}`],
+        ["RiskPolicyRegistry.sol →", "https://github.com/Truunik/RiskClaw/blob/main/contracts/src/RiskPolicyRegistry.sol"],
+      ],
+    },
+
+    hook: {
+      kicker: "onchain · v4 BaseHook",
+      title: "RiskHook",
+      body: `<p>The enforcer. Deployed at a CREATE2-mined address whose low 14 bits are exactly <code>0x880</code> = <code>BEFORE_SWAP_FLAG | BEFORE_ADD_LIQUIDITY_FLAG</code>. The v4 PoolManager rejects hooks whose address bits don't match their declared permissions — so the deployment itself is a kind of proof.</p>
+        <p>On every swap: reverts if the policy is stale, reverts if score ≥ 8500 (BLOCK), enforces <code>maxAbsAmountSpecified</code>, otherwise returns <code>OVERRIDE_FEE_FLAG | dynamicFee</code> so the per-swap fee is the AI-set policy fee.</p>`,
+      kv: [
+        ["address", short(HOOK)],
+        ["flag bits", "0x880 (CREATE2-mined)"],
+        ["BLOCK_THRESHOLD", "8,500"],
+        ["tests passing", "11/11"],
+      ],
+      links: [
+        ["hook on chainscan", `${EXPLORER}/address/${HOOK}`],
+        ["RiskHook.sol →", "https://github.com/Truunik/RiskClaw/blob/main/contracts/src/RiskHook.sol"],
+      ],
+    },
+
+    swapper: {
+      kicker: "external actor",
+      title: "Any swapper",
+      body: `<p>The thing the audit chain is for. A user (or router, or batch caller) initiates a v4 swap. The PoolManager calls <code>RiskHook.beforeSwap</code>, which reads the registry, applies the AI-set policy, and either returns an override fee or reverts.</p>
+        <p>The live demo run swapped <code>0.1 token0 → 0.0899 token1</code>, settling at an effective fee of <strong>~10.02%</strong> — exactly the AI's recommendation, plus a thin tail of price impact on the wide-range pool.</p>`,
+      kv: [
+        ["test router", short(SWAP_ROUTER)],
+        ["sent", "0.1000 token0"],
+        ["received", "0.0899 token1"],
+        ["effective fee", "10.02%"],
+      ],
+      links: [
+        ["swap tx on chainscan", `${EXPLORER}/tx/${SWAP_TX}`],
+      ],
+    },
+  };
+
+  function short(addr) {
+    if (!addr || addr.length < 14) return addr;
+    return addr.slice(0, 8) + "…" + addr.slice(-6);
+  }
+
+  function render(id) {
+    const n = NODES[id];
+    if (!n) return;
+    const detail = document.getElementById("detail");
+    detail.innerHTML = `
+      <div class="kicker">${n.kicker}</div>
+      <h3>${n.title}</h3>
+      ${n.body}
+      <h4>facts</h4>
+      <div class="kv">
+        ${n.kv.map(([k, v]) => `<span class="k">${k}</span><span class="v">${v}</span>`).join("")}
+      </div>
+      ${n.links && n.links.length ? `<div class="links">${n.links.map(([t, u]) => `<a href="${u}" target="_blank" rel="noopener">${t}</a>`).join("")}</div>` : ""}
+    `;
+    document.querySelectorAll(".node.selected").forEach(el => el.classList.remove("selected"));
+    const node = document.querySelector(`.node[data-id="${id}"]`);
+    if (node) node.classList.add("selected");
+  }
+
+  document.querySelectorAll(".node").forEach(n => {
+    n.addEventListener("click", () => render(n.dataset.id));
+    n.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        render(n.dataset.id);
+      }
+    });
+  });
+</script>
+
+</body>
+</html>
