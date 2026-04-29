@@ -1,10 +1,12 @@
 import { createZGComputeNetworkBroker } from "@0glabs/0g-serving-broker";
 import { JsonRpcProvider, Wallet } from "ethers";
 
-/// One-shot end-to-end test: ensure ledger exists (funds 0.01 0G if not),
+/// One-shot end-to-end test: ensure ledger exists (funds if not),
 /// list services, pick the configured model, run a tiny chat completion,
 /// verify the TEE signature via processResponse, print everything.
-const FUND_AMOUNT_OG = 0.01;
+/// Contract enforces a 3 0G minimum on first ledger creation; 3.5 leaves
+/// headroom for inference billing on top of the floor.
+const FUND_AMOUNT_OG = 3.5;
 const GAS_PRICE_NEURON = 3_000_000_000; // 3 gwei — chain min is 2 gwei strict
 
 async function main() {
@@ -63,7 +65,8 @@ async function main() {
   const headers = await broker.inference.getRequestHeaders(providerAddress, userContent);
 
   // ---- Step 5: chat completion ----
-  const url = `${endpoint.replace(/\/$/, "")}/v1/chat/completions`;
+  // Provider endpoint already includes /v1/proxy, so we only append /chat/completions.
+  const url = `${endpoint.replace(/\/$/, "")}/chat/completions`;
   console.log("[request]  POST", url);
   const res = await fetch(url, {
     method: "POST",
