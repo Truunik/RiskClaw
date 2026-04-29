@@ -28,8 +28,11 @@ BLOCK         catastrophic         swap/add reverts in beforeSwap
 ```bash
 cd agents && bun install && cp ../.env.example ../.env  # fill in keys
 bun run loop                                            # full agent loop
+bun run demo:state                                      # current pool mode
 bun run demo:explain <root>                             # fetch memo/proof
                                                         # by 0G Storage root
+bun run demo:swap                                       # actually swap
+                                                        # through the hook
 ```
 
 A real run on 0G Galileo testnet (chain id 16602), with real 0G Compute and
@@ -62,6 +65,25 @@ That single transaction is the entire RiskClaw thesis: a real 7B-param LLM
 running in a TEE under 0G Compute justified the policy change, the memo and
 TEE attestation are pinned to 0G Storage at fetchable roots, and a v4 hook
 sitting in front of the pool will read the new policy on the next swap.
+
+And it does. `bun run demo:swap` performs an actual swap on the deployed
+0G testnet pool through the hook:
+
+```
+swapping    0.1000 token0 -> token1 (exact-in, zeroForOne)
+swap tx     0x1b94d6c989f1b03aa9701d9b6afbf4ce42c7666785ad01b5efcaf1eac25ebbc8
+confirmed   in 8082ms (block 30560097)
+
+post bal0   999002.2794  (Δ -0.1000)
+post bal1   999002.6594  (Δ +0.0899)
+effective   ~10.02% (fee + price impact combined)
+```
+
+The 10% fee shows up onchain because — and only because — `RiskHook.beforeSwap`
+returned `OVERRIDE_FEE_FLAG | 100_000` after reading the AI-set policy from
+the registry. Drop the policy back below the PENALTY_FEE band, the next
+swap settles at a baseline fee. Push the score above 8500, the next swap
+reverts in the hook with `PoolBlocked(poolId, riskScore)`.
 
 ## Deployed on 0G Galileo testnet
 
@@ -187,6 +209,6 @@ who wants a v4 hook driven by a 0G agent loop.
 - [x] Pool initialized with `DYNAMIC_FEE_FLAG` so per-swap overrides apply
 - [x] Executor: signed `updatePolicy` tx to `RiskPolicyRegistry` (live on 0G)
 - [x] `demo:explain <root>` CLI for fetching memo/proof from 0G Storage
-- [ ] `demo:state` CLI for reading current pool mode/fee/roots from registry
-- [ ] `demo:swap` script exercising the live hook end-to-end on testnet
+- [x] `demo:state` CLI for reading current pool mode/fee/roots from registry
+- [x] `demo:swap` script exercising the live hook end-to-end on testnet
 - [ ] (P2) `RiskGuardian` ERC-7857 iNFT
