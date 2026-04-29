@@ -6,6 +6,7 @@
   "scripts": {
     "loop": "bun run src/run-loop.ts",
     "demo:explain": "bun run src/scripts/demo-explain.ts",
+    "demo:state": "bun run src/scripts/demo-state.ts",
     "compute:list": "bun run src/scripts/compute-list-services.ts",
     "compute:ledger": "bun run src/scripts/compute-ledger-status.ts",
     "compute:fund-and-test": "bun run src/scripts/compute-fund-and-test.ts",
