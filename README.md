@@ -183,6 +183,27 @@ bun install
 bun run loop
 ```
 
+## MCP server (`/mcp`)
+
+Read-only Model Context Protocol server that lets any LLM agent query
+RiskClaw's live policy state and the 0G Storage proof chain. Wire it into
+Claude Desktop and your AI assistant can ask *"what's the current risk
+policy on this pool?"* before recommending a swap to a user.
+
+Tools: `get_pool_policy`, `get_memo`, `get_metrics`, `get_proof_artifact`,
+`explain_policy_modes`. Defaults out of the box to the live deployment on
+0G Galileo — `cp .env.example .env` and you have a working server.
+
+```bash
+cd mcp
+bun install        # or: npm install
+npm run build
+npm run start
+```
+
+See [`mcp/README.md`](./mcp/README.md) for Claude Desktop config and the
+full tool reference.
+
 ## Framework extraction (later)
 
 When the demo loop is solid, the reusable pieces lift cleanly into
@@ -211,4 +232,5 @@ who wants a v4 hook driven by a 0G agent loop.
 - [x] `demo:explain <root>` CLI for fetching memo/proof from 0G Storage
 - [x] `demo:state` CLI for reading current pool mode/fee/roots from registry
 - [x] `demo:swap` script exercising the live hook end-to-end on testnet
+- [x] Read-only MCP server (`/mcp`) exposing policy + 0G Storage proofs to any LLM agent
 - [ ] (P2) `RiskGuardian` ERC-7857 iNFT

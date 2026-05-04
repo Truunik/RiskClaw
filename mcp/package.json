@@ -1,0 +1,27 @@
+{
+  "name": "@riskclaw/mcp",
+  "version": "0.1.0",
+  "description": "Read-only MCP server exposing RiskClaw policy state and 0G Storage proofs to any LLM agent.",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "riskclaw-mcp": "./dist/server.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@0gfoundation/0g-ts-sdk": "^1.2.6",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "viem": "^2.21.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
