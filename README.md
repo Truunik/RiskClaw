@@ -2,6 +2,8 @@
 
 **An autonomous risk guardian for v4-style liquidity pools, powered by 0G.**
 
+*Inspired by the risk-rating work at [Xerberus.io](https://xerberus.io) — built by a maintainer on the Xerberus team.*
+
 RiskClaw watches pool behavior, stores persistent risk memory on 0G Storage,
 runs verifiable AI risk analysis on 0G Compute, and updates an onchain policy
 registry that a Uniswap v4-style hook reads before every swap and liquidity
@@ -234,3 +236,10 @@ who wants a v4 hook driven by a 0G agent loop.
 - [x] `demo:swap` script exercising the live hook end-to-end on testnet
 - [x] Read-only MCP server (`/mcp`) exposing policy + 0G Storage proofs to any LLM agent
 - [ ] (P2) `RiskGuardian` ERC-7857 iNFT
+
+## About
+
+Built at the ETHGlobal Agentic hackathon by a member of the
+[Xerberus.io](https://xerberus.io) team. Xerberus rates risk for DeFi
+positions off-chain; RiskClaw applies the same instinct on-chain — the
+pool enforces the rating instead of asking the user to check it.
